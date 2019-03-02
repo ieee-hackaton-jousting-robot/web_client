@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+
+    <link href="https://fonts.googleapis.com/css?family=Roboto" rel="stylesheet">
+
+</head>
+<body>
+
+
+<style>
+
+    :root {
+        --circle-width: 20px;
+    }
+
+    body {
+        background-color: black;
+        color: white;
+        font-family: 'Roboto', sans-serif;
+    }
+
+
+    #container {
+        display: flex;
+        flex-direction: row;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .joystick_interface {
+        background-color: #676767;
+
+        border-radius: 20px;
+        padding: 20px;
+        color: black;
+        width: 400px;
+        height: 400px;
+        margin: 10px;
+    }
+
+    .connected {
+        background-color: lightgreen;
+    }
+
+    #joystick1 {
+    }
+
+    .axis_display {
+        margin: 20px;
+        background-color: grey;
+
+        width: 200px;
+        height: 200px;
+        position: relative;
+    }
+
+    .axis_circle {
+        position: absolute;
+
+        top: calc(50% - var(--circle-width)/2);
+        left: calc(50% - var(--circle-width)/2);
+
+        background-color: white;
+        border-radius: calc(var(--circle-width) / 2);
+        width: var(--circle-width);
+        height: var(--circle-width);
+
+    }
+
+</style>
+
+<h1>Robo Josting</h1>
+<div id="container">
+    <div id="joystick1" class="joystick_interface">
+        <h1>Player 1</h1>
+        <div>Joystick Model: <span class="model"></span></div>
+
+        <div class="axis_display">
+            <div class="axis_circle"></div>
+        </div>
+
+        <div>
+            <input type="checkbox" class="enable" id="enable1"/>
+            <label for="enable1">Robot Enable</label>
+        </div>
+
+    </div>
+
+    <div id="joystick2" class="joystick_interface">
+        <h1>Player 2</h1>
+        <div>Joystick Model: <span class="model"></span></div>
+
+        <div class="axis_display">
+            <div class="axis_circle"></div>
+        </div>
+
+        <div>
+            <input type="checkbox" class="enable" id="enable2"/>
+            <label for="enable2">Robot Enable</label>
+        </div>
+
+    </div>
+</div>
+
+
+<script>
+
+
+    function joystick_div_selector(number){
+        switch (number) {
+            case 0:
+                return "#joystick1";
+            case 1:
+                return "#joystick2";
+        }
+    }
+
+    function initPlayerFields(player) {
+        player.up_down = 0;
+        player.left_right = 0;
+        return player;
+    }
+
+    var players = {};
+
+    function gamepadConnected(e) {
+        console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
+            e.gamepad.index, e.gamepad.id,
+            e.gamepad.buttons.length, e.gamepad.axes.length);
+
+        let joystick_div = $(joystick_div_selector(e.gamepad.index));
+        joystick_div.find(".model").html(e.gamepad.id);
+        joystick_div.toggleClass("connected", true);
+
+        players[e.gamepad.index] = initPlayerFields({gamepad: e.gamepad, div: joystick_div});
+    }
+
+
+    function gamepadDisconnected(e) {
+        console.log("Gamepad disconnected from index %d: %s",
+            e.gamepad.index, e.gamepad.id);
+
+        let joystick_div = $(joystick_div_selector(e.gamepad.index));
+        joystick_div.find(".model").html(e.gamepad.id);
+        joystick_div.toggleClass("connected", false);
+        players.delete(e.gamepad.index);
+
+    }
+
+    window.addEventListener("gamepadconnected", gamepadConnected);
+    window.addEventListener("gamepaddisconnected", gamepadDisconnected);
+
+    function updateInfo(player) {
+        player.up_down = player.gamepad.axes[5];
+        player.left_right = player.gamepad.axes[4];
+
+
+    }
+
+    function axis_compute(out_range, circle_width, value) {
+        let scaler = 0.8;
+        return (value*scaler+1)/2 * out_range - circle_width/2;
+    }
+
+    function drawPlayerInfo(player) {
+        let axis_circle_width = parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue('--circle-width').replace("px",""));
+
+        let disp_width = player.div.find(".axis_display").width();
+        let disp_height = player.div.find(".axis_display").height();
+
+
+        let x = axis_compute(disp_width, axis_circle_width, player.left_right);
+        let y = axis_compute(disp_height, axis_circle_width, player.up_down);
+
+        player.div.find(".axis_circle").css({
+            top: y,
+            left: x
+        });
+    }
+
+
+
+    function initWS() {
+        var socket = new WebSocket("ws://localhost:8080/ws"),
+            container = $("#container")
+        socket.onopen = function() {
+            console.log("Socket is open");
+        };
+        socket.onmessage = function (e) {
+        };
+        socket.onclose = function () {
+            console.log("Socket closed");
+        };
+        return socket;
+    }
+
+    var ws;
+    if (window.WebSocket === undefined) {
+        alert("Your browser does not support websockets");
+    } else {
+        ws = initWS();
+    }
+
+
+    function loop() {
+
+        var output = [];
+
+
+        for (var i in players) {
+            if (players.hasOwnProperty(i)) {
+                var player = players[i];
+                updateInfo(player);
+                drawPlayerInfo(player);
+
+                output.push({PlayerID: parseInt(i), Vertical: player.up_down, Horizontal: player.left_right})
+            }
+
+            ws.send(JSON.stringify(output));
+        }
+
+
+    }
+
+    $(document).ready(function() {
+        console.log("hello world");
+
+        let timerId = setInterval(loop, 1);
+    });
+
+
+
+
+</script>
+
+
+</body>
+</html>
