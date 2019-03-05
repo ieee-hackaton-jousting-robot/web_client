@@ -74,6 +74,10 @@
         width: 90%;
     }
 
+    .center_control {
+        width: 80%;
+    }
+
 </style>
 
 <h1>Robo Josting</h1>
@@ -98,6 +102,15 @@
         <button class="disconnect">Disconnect</button><br/><br/>
 
         <img class="webcam_image" src="noise.png"/>
+
+        <br><br>
+        <button class="light_on">Light On</button>
+        <button class="light_off">Light Off</button>
+
+        <br><br>
+        Center Control: <span class="center_value">0</span><br>
+
+        <input type="range" min="-1" max="1" value="0" step="0.01" class="center_control"/>
     </div>
 
     <div id="joystick2" class="joystick_interface" data-player="1">
@@ -115,11 +128,25 @@
 
         <img class="webcam_image" src="noise.png"/>
 
+        <br><br>
+        <button class="light_on">Light On</button>
+        <button class="light_off">Light Off</button>
+
+        <br><br>
+        Center Control: <span class="center_value">0</span><br>
+
+        <input type="range" min="-1" max="1" value="0" step="0.01" class="center_control"/>
+
     </div>
 </div>
 
 <script>
 
+
+    var motor_config = {
+        0: {dir: 0, speed: 1, turn_speed: 0.5},
+        1: {dir: 0, speed: 1, turn_speed: 0.5}
+    };
 
     function joystick_div_selector(number){
         switch (number) {
@@ -147,7 +174,7 @@
         joystick_div.find(".model").html(e.gamepad.id);
         joystick_div.toggleClass("connected", true);
 
-        players[e.gamepad.index] = initPlayerFields({gamepad: e.gamepad, div: joystick_div});
+        players[e.gamepad.index] = initPlayerFields({gamepad: e.gamepad, div: joystick_div, index: e.gamepad.index});
     }
 
 
@@ -198,12 +225,21 @@
     }
 
     function motorSpeeds(player) {
-        var left = thres(player.vertical);
-        var right = thres(player.vertical);
+        let left = 0;
+        let right = 0;
+        if (Math.abs(player.vertical) > 0.1) {
+            if (player.vertical > 0) {
+                left = player.vertical * motor_config[player.index].speed + motor_config[player.index].dir;
+                right = player.vertical * motor_config[player.index].speed - motor_config[player.index].dir;
+            } else {
+                left = player.vertical * motor_config[player.index].speed - motor_config[player.index].dir;
+                right = player.vertical * motor_config[player.index].speed + motor_config[player.index].dir;
+            }
+        }
 
         if (Math.abs(player.horizontal) > 0.5) {
-            left = player.horizontal * 0.5;
-            right = -player.horizontal * 0.5
+            left = player.horizontal * motor_config[player.index].turn_speed;
+            right = -player.horizontal * motor_config[player.index].turn_speed;
         }
         return [left, right];
     }
@@ -302,7 +338,37 @@
             }
         });
 
+        $(".light_on").click((event) => {
+            let parent = $(event.target.parentElement);
+            let ip = parent.find(".ip_address").val();
+            let url = `http://${ip}:8081/enabletorch`;
+            $.get(url);
+        });
 
+        $(".light_off").click((event) => {
+            let parent = $(event.target.parentElement);
+            let ip = parent.find(".ip_address").val();
+            let url = `http://${ip}:8081/disabletorch`;
+            $.get(url);
+        });
+
+
+        $(".center_control").on("input", (event) => {
+            let parent = $(event.target.parentElement);
+            let index = parent.data().player;
+
+            parent.find(".center_value").text($(event.target).val());
+            motor_config[index].dir = parseFloat($(event.target).val());
+        });
+
+        $(".center_value").click((event) => {
+            let parent = $(event.target.parentElement);
+            let index = parent.data().player;
+
+            parent.find(".center_control").val(0);
+            $(event.target).text(0);
+            motor_config[index].dir = 0;
+        });
 
     });
 
