@@ -37,8 +37,7 @@
         border-radius: 20px;
         padding: 20px;
         color: black;
-        width: 400px;
-        height: 400px;
+        width: 30vw ;
         margin: 10px;
     }
 
@@ -71,41 +70,53 @@
 
     }
 
+    .webcam_image {
+        width: 90%;
+    }
+
 </style>
 
 <h1>Robo Josting</h1>
+
+<input type="text" id="loop_time" placeholder="timer loop (ms)" text="50"/>
+<button id="start">Start Joystick Loop</button>
+<button id="stop">Stop Joystick Loop</button>
+
+
 <div id="container">
-    <div id="joystick1" class="joystick_interface">
+    <div id="joystick1" class="joystick_interface" data-player="0">
         <h1>Player 1</h1>
         <div>Joystick Model: <span class="model"></span></div>
+        <div>Socket Status: <span class="socket_status">Undefined</span></div>
 
         <div class="axis_display">
             <div class="axis_circle"></div>
         </div>
 
-        <div>
-            <input type="checkbox" class="enable" id="enable1"/>
-            <label for="enable1">Robot Enable</label>
-        </div>
+        <input type="text" class="ip_address" placeholder="ip_address / hostname"/>
+        <button class="connect">Connect</button>
+        <button class="disconnect">Disconnect</button><br/><br/>
 
+        <img class="webcam_image" src="noise.png"/>
     </div>
 
-    <div id="joystick2" class="joystick_interface">
+    <div id="joystick2" class="joystick_interface" data-player="1">
         <h1>Player 2</h1>
         <div>Joystick Model: <span class="model"></span></div>
+        <div>Socket Status: <span class="socket_status">Undefined</span></div>
 
         <div class="axis_display">
             <div class="axis_circle"></div>
         </div>
 
-        <div>
-            <input type="checkbox" class="enable" id="enable2"/>
-            <label for="enable2">Robot Enable</label>
-        </div>
+        <input type="text" class="ip_address" placeholder="ip_address / hostname"/>
+        <button class="connect">Connect</button>
+        <button class="disconnect">Disconnect</button><br/><br/>
+
+        <img class="webcam_image" src="noise.png"/>
 
     </div>
 </div>
-
 
 <script>
 
@@ -120,8 +131,8 @@
     }
 
     function initPlayerFields(player) {
-        player.up_down = 0;
-        player.left_right = 0;
+        player.vertical = 0;
+        player.horizontal = 0;
         return player;
     }
 
@@ -155,8 +166,8 @@
     window.addEventListener("gamepaddisconnected", gamepadDisconnected);
 
     function updateInfo(player) {
-        player.up_down = player.gamepad.axes[5];
-        player.left_right = player.gamepad.axes[4];
+        player.vertical = player.gamepad.axes[5] * -1;
+        player.horizontal = player.gamepad.axes[4];
 
 
     }
@@ -173,8 +184,8 @@
         let disp_height = player.div.find(".axis_display").height();
 
 
-        let x = axis_compute(disp_width, axis_circle_width, player.left_right);
-        let y = axis_compute(disp_height, axis_circle_width, player.up_down);
+        let x = axis_compute(disp_width, axis_circle_width, player.horizontal);
+        let y = axis_compute(disp_height, axis_circle_width, player.vertical);
 
         player.div.find(".axis_circle").css({
             top: y,
@@ -182,54 +193,117 @@
         });
     }
 
-
-
-    function initWS() {
-        var socket = new WebSocket("ws://localhost:8080/ws"),
-            container = $("#container")
-        socket.onopen = function() {
-            console.log("Socket is open");
-        };
-        socket.onmessage = function (e) {
-        };
-        socket.onclose = function () {
-            console.log("Socket closed");
-        };
-        return socket;
+    function thres(value) {
+        return Math.abs(value) > 0.1 ? value : 0;
     }
 
-    var ws;
+    function motorSpeeds(player) {
+        var left = thres(player.vertical);
+        var right = thres(player.vertical);
+
+        if (Math.abs(player.horizontal) > 0.5) {
+            left = player.horizontal * 0.5;
+            right = -player.horizontal * 0.5
+        }
+        return [left, right];
+    }
+
+
+    var websockets = {
+        0: undefined,
+        1: undefined
+    };
+
     if (window.WebSocket === undefined) {
         alert("Your browser does not support websockets");
-    } else {
-        ws = initWS();
     }
-
 
     function loop() {
 
-        var output = [];
-
-
-        for (var i in players) {
+        for (let i in players) {
             if (players.hasOwnProperty(i)) {
-                var player = players[i];
+                let player = players[i];
                 updateInfo(player);
                 drawPlayerInfo(player);
 
-                output.push({PlayerID: parseInt(i), Vertical: player.up_down, Horizontal: player.left_right})
             }
-
-            ws.send(JSON.stringify(output));
         }
 
+        if (0 in players) {
+            let [left, right] = motorSpeeds(players[0]);
+            websockets[0].send(JSON.stringify({left: left, right: right}))
+        }
 
+        if (1 in players) {
+            let [left, right] = motorSpeeds(players[1]);
+            websockets[1].send(JSON.stringify({left: left, right: right}))
+        }
     }
 
     $(document).ready(function() {
-        console.log("hello world");
 
-        let timerId = setInterval(loop, 1);
+        $(".connect").click((event) => {
+            let parent = $(event.target.parentElement);
+            let ip = parent.find(".ip_address").val();
+            let websocket_url = `ws://${ip}:8080/live`;
+            let webcam = `http://${ip}:8081/video`;
+
+            parent.find('.webcam_image').attr('src', webcam);
+            parent.find(".socket_status").text("Socket Connecting...");
+
+            let index = parent.data().player;
+            websockets[index] = new WebSocket(websocket_url);
+            websockets[index].onopen = function () {
+                console.log(`Socket #${index} opened`);
+                parent.find(".socket_status").text("Socket Opened");
+            };
+
+            websockets[index].onmessage = function () {
+
+            };
+
+            websockets[index].onclose = function () {
+                console.log(`Socket #${index} closed`);
+                parent.find(".socket_status").text("Socket Closed");
+
+            };
+
+            console.log(event);
+
+        });
+
+        $(".disconnect").click((event) => {
+            let parent = $(event.target.parentElement);
+            let index = parent.data().player;
+
+            if (websockets[index] !== undefined) {
+                websockets[index].close();
+                websockets[index] = undefined;
+            }
+
+
+        });
+
+
+        var timerID;
+
+        $("#start").click(() => {
+            if (timerID !== undefined) {
+                clearInterval(timerID);
+                timerID = undefined
+            }
+            timerID = setInterval(loop, parseInt($("#loop_time").val()));
+        });
+
+        $("#stop").click(() => {
+            if (timerID !== undefined) {
+                clearInterval(timerID);
+                timerID = undefined
+            }
+        });
+
+
+
     });
 
 
